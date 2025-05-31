@@ -5,13 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e5346631-b884-4067-b579-322c47e41ea5" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/data/icon.ico" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/dist/obsm.exe" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.in" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.in" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tool/obsm_calculator.py" beforeDir="false" afterPath="$PROJECT_DIR$/tool/obsm_calculator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tool/obsm_gui.py" beforeDir="false" afterPath="$PROJECT_DIR$/tool/obsm_gui.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
