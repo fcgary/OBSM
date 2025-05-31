@@ -63,7 +63,7 @@ class Effect:
         summary = ''
         eff_name_txt =  self.name + (f": {self.details}" if has_details(self.name) else "")
         summary += (eff_name_txt + " ")
-        summary += f"{self.mag} points "
+        summary += f"{self.mag} points " if has_mag(self.name) else ""
         summary += f"in {self.area} feet " if self.area > 0 else ""
         summary += f"for {self.dur} seconds "
         summary += f"on {self.range}"
@@ -165,6 +165,8 @@ class Spell:
         for skill, threshold in skill_reqs.items():
             if self.total_cost < threshold:
                 return skill
+        else:
+            return None
 
     def _match_eff(self, eff: [str, Effect], str_detail=def_string):
         """
@@ -270,7 +272,6 @@ class SpellMaker:
         # Verify all needed casting skills are known
         used_schools = set([list(sc.keys())[0] for sc in spell_components])
         skill_not_found = True if True in [s not in self.skills.keys() for s in used_schools] else False
-        # skill_not_found = True if True in [k not in self.skills.keys() for k in spell_components.keys()] else False
         if skill_not_found:
             logger.warning("Cannot calculate casting cost, please add magic skills")
             return 0
