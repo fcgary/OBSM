@@ -8,16 +8,17 @@ spell_maker = SpellMaker(skills={"Alteration": 5, "Conjuration": 5, "Destruction
 def has_details(eff_name):
     return "Skill" in eff_name or "Attribute" in eff_name
 
-def create_main_buttons(left_frame, right_frame, labels):
+def create_main_buttons(left_frame, right_frame, labels, canvas):
     buttons = []
     left_frame.main_buttons = buttons
 
     def on_button_click(label_text):
         for btn in buttons:
             btn.destroy()
+        canvas.yview_moveto(0)
         clicked_label = ttk.Label(left_frame, text=f"{label_text}")
         clicked_label.pack(pady=10)
-        create_sliders_save_restart(left_frame, right_frame, labels, clicked_label, label_text)
+        create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, label_text)
 
     for label_text in labels:
         button = ttk.Button(left_frame, text=label_text)
@@ -25,20 +26,67 @@ def create_main_buttons(left_frame, right_frame, labels):
         button.pack(pady=5)
         buttons.append(button)
 
-def create_sliders_save_restart(left_frame, right_frame, labels, clicked_label, clicked_text):
+def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, clicked_text):
     widgets = [clicked_label]
     slider_data = []
     dropdown_value = tk.StringVar(value="Choose one..")
     range_value = tk.StringVar(value="Self")
 
-    for i, label in enumerate(["Magnitude", "Duration", "Area"]):
-        l = ttk.Label(left_frame, text=f"{label}: 1")
-        l.pack()
-        s = ttk.Scale(left_frame, from_=1, to=100, orient='horizontal', command=lambda val, l=l, lbl=label: l.config(text=f"{lbl}: {int(float(val))}"))
-        s.set(0)
-        s.pack()
-        slider_data.append((l, s))
-        widgets.extend([l, s])
+    slider_ranges = {
+        "Magnitude": (3, 100),
+        "Duration": (1, 100),
+        "Area": (0, 100),
+    }
+
+    for label in ["Magnitude", "Duration", "Area"]:
+        min_val, max_val = slider_ranges[label]
+        frame = ttk.Frame(left_frame)
+        frame.pack(fill='x', pady=2)
+
+        var = tk.StringVar()
+        entry = ttk.Entry(frame, width=5, textvariable=var)
+        entry.pack(side='left')
+
+        s = ttk.Scale(frame, from_=min_val, to=max_val, orient='horizontal')
+        s.pack(side='left', fill='x', expand=True, padx=5)
+
+        def slider_to_entry(val, var=var):
+            val_int = int(float(val))
+            var.set(str(val_int))
+
+        s.config(command=slider_to_entry)
+
+        def entry_validate(new_val, min_val=min_val, max_val=max_val):
+            if new_val == "":
+                return True
+            try:
+                v = int(new_val)
+                return min_val <= v <= max_val
+            except ValueError:
+                return False
+
+        vcmd = (left_frame.register(entry_validate), '%P')
+
+        def on_entry_focus_out(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+            try:
+                v = int(var.get())
+                if v < min_val:
+                    v = min_val
+                elif v > max_val:
+                    v = max_val
+                var.set(str(v))
+                scale.set(v)
+            except ValueError:
+                var.set(str(min_val))
+                scale.set(min_val)
+
+        entry.bind("<FocusOut>", on_entry_focus_out)
+
+        var.set(str(min_val))
+        s.set(min_val)
+
+        slider_data.append((var, s))
+        widgets.extend([frame])
 
     has_dropdown = has_details(clicked_text)
     if has_dropdown:
@@ -61,18 +109,18 @@ def create_sliders_save_restart(left_frame, right_frame, labels, clicked_label, 
     range_dropdown.pack()
     widgets.extend([range_label, range_dropdown])
 
-    def restart():
+    def cancel():
         for widget in widgets:
             widget.destroy()
         save_button.destroy()
-        restart_button.destroy()
-        create_main_buttons(left_frame, right_frame, labels)
+        cancel_button.destroy()
+        create_main_buttons(left_frame, right_frame, labels, canvas)
 
     def save():
         params = {
-            "mag": int(slider_data[0][1].get()),
-            "dur": int(slider_data[1][1].get()),
-            "area": int(slider_data[2][1].get()),
+            "mag": int(slider_data[0][0].get()),
+            "dur": int(slider_data[1][0].get()),
+            "area": int(slider_data[2][0].get()),
             "range": range_value.get()
         }
         if has_dropdown:
@@ -80,27 +128,46 @@ def create_sliders_save_restart(left_frame, right_frame, labels, clicked_label, 
 
         spell_maker.update_spell(clicked_text, **params)
         update_saved_display(right_frame)
-        restart()
+        cancel()
 
     save_button = ttk.Button(left_frame, text="Save", command=save)
     save_button.pack(pady=5)
 
-    restart_button = ttk.Button(left_frame, text="Restart", command=restart)
-    restart_button.pack(pady=5)
+    cancel_button = ttk.Button(left_frame, text="Cancel", command=cancel)
+    cancel_button.pack(pady=5)
 
-    left_frame.main_buttons = [save_button, restart_button]
+    left_frame.main_buttons = [save_button, cancel_button]
 
 def update_saved_display(right_frame):
-    # Update skills display
     for widget in skills_frame.winfo_children():
         widget.destroy()
+
+    def on_skill_change(skill_name, var):
+        try:
+            new_val = int(var.get())
+            spell_maker.skills[skill_name] = new_val
+        except ValueError:
+            pass
+
     if spell_maker.skills:
-        skills_text = ", ".join(f"{k}: {v}" for k, v in spell_maker.skills.items())
-        ttk.Label(skills_frame, text=f"Skills: {skills_text}").pack(anchor='w')
+        skills = list(spell_maker.skills.items())
+        for i, (skill, value) in enumerate(skills):
+            row = i // 3
+            col = i % 3
+
+            frame = ttk.Frame(skills_frame)
+            frame.grid(row=row, column=col, padx=5, pady=2, sticky='w')
+
+            label = ttk.Label(frame, text=f"{skill}:")
+            label.pack(side='left')
+
+            var = tk.StringVar(value=str(value))
+            entry = ttk.Entry(frame, textvariable=var, width=5)
+            entry.pack(side='left')
+            var.trace_add("write", lambda *_, sk=skill, v=var: on_skill_change(sk, v))
     else:
         ttk.Label(skills_frame, text="No skills set.").pack(anchor='w')
 
-    # Update summary display
     for widget in summary_frame.winfo_children():
         widget.destroy()
     if spell_maker.current_spell:
@@ -148,15 +215,9 @@ def edit_entry(index, right_frame, left_frame):
         pos_y = main_y + (main_h // 2) - (win_h // 2)
         edit_win.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
 
-    # Initial center
     main_window.update_idletasks()
     center_edit_window()
-
-    # Update position when main window moves
-    def track_main_position(event):
-        center_edit_window()
-
-    main_window.bind("<Configure>", track_main_position)
+    main_window.bind("<Configure>", lambda event: center_edit_window())
 
     title_bar = tk.Frame(edit_win, bg="#444")
     title_bar.pack(fill="x")
@@ -168,27 +229,70 @@ def edit_entry(index, right_frame, left_frame):
 
     ttk.Label(content_frame, text=f"Effect: {eff.name}").pack(pady=5)
 
+    slider_ranges = {
+        "Magnitude": (3, 100),
+        "Duration": (1, 100),
+        "Area": (0, 100),
+    }
+
     vars_ = []
     for val, label in zip([eff.mag, eff.dur, eff.area], ["Magnitude", "Duration", "Area"]):
-        var = tk.IntVar(value=val)
-        l = ttk.Label(content_frame, text=f"{label}: {val}")
-        l.pack()
-        s = ttk.Scale(content_frame, from_=0, to=100, orient='horizontal', variable=var,
-                      command=lambda val, l=l, lbl=label: l.config(text=f"{lbl}: {int(float(val))}"))
-        s.pack()
+        min_val, max_val = slider_ranges[label]
+
+        frame = ttk.Frame(content_frame)
+        frame.pack(fill='x', pady=2)
+
+        var = tk.StringVar(value=str(val))
+        entry = ttk.Entry(frame, width=5, textvariable=var)
+        entry.pack(side='left')
+
+        s = ttk.Scale(frame, from_=min_val, to=max_val, orient='horizontal')
+
+        def slider_to_entry(val, var=var):
+            val_int = int(float(val))
+            var.set(str(val_int))
+
+        s.config(command=slider_to_entry)
+        s.pack(side='left', fill='x', expand=True, padx=5)
+
+        def entry_validate(new_val, min_val=min_val, max_val=max_val):
+            if new_val == "":
+                return True
+            try:
+                v = int(new_val)
+                return min_val <= v <= max_val
+            except ValueError:
+                return False
+
+        vcmd = (content_frame.register(entry_validate), '%P')
+
+        def on_entry_focus_out(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+            try:
+                v = int(var.get())
+                if v < min_val:
+                    v = min_val
+                elif v > max_val:
+                    v = max_val
+                var.set(str(v))
+                scale.set(v)
+            except ValueError:
+                var.set(str(min_val))
+                scale.set(min_val)
+
+        entry.bind("<FocusOut>", on_entry_focus_out)
+
+        s.set(val)
         vars_.append(var)
 
     range_value = tk.StringVar(value=eff.range)
-    range_label = ttk.Label(content_frame, text="Range:")
-    range_label.pack()
+    ttk.Label(content_frame, text="Range:").pack()
     range_dropdown = ttk.Combobox(content_frame, textvariable=range_value)
     range_dropdown['values'] = ("Touch", "Self", "Target")
     range_dropdown.pack()
 
     dropdown_var = tk.StringVar(value=eff.details)
     if has_details(eff.name):
-        ddl_label = ttk.Label(content_frame, text="Details:")
-        ddl_label.pack()
+        ttk.Label(content_frame, text="Details:").pack()
         ddl = ttk.Combobox(content_frame, textvariable=dropdown_var)
         if "Attribute" in eff.name:
             ddl['values'] = ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality", "Luck")
@@ -199,8 +303,17 @@ def edit_entry(index, right_frame, left_frame):
         ddl.pack()
 
     def save_changes():
+        try:
+            mag = int(vars_[0].get())
+            dur = int(vars_[1].get())
+            area = int(vars_[2].get())
+        except ValueError:
+            return
+
         eff.set_param(
-            mag=vars_[0].get(), dur=vars_[1].get(), area=vars_[2].get(),
+            mag=mag,
+            dur=dur,
+            area=area,
             range=range_value.get(),
             details=dropdown_var.get() if has_details(eff.name) else "None"
         )
@@ -227,9 +340,10 @@ root.geometry("800x400")
 paned = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
 paned.pack(fill=tk.BOTH, expand=True)
 
-# === Left Frame with Scrollable Canvas ===
-left_outer = ttk.Frame(paned, width=120)
-canvas = tk.Canvas(left_outer, borderwidth=0, width=120)
+left_outer = ttk.Frame(paned, width=150)
+left_outer.pack_propagate(False)
+
+canvas = tk.Canvas(left_outer, borderwidth=0, width=150)
 scrollbar = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
 scrollable_frame = ttk.Frame(canvas)
 
@@ -238,23 +352,21 @@ scrollable_frame.bind(
     lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
 )
 
-canvas.create_window((20, 0), window=scrollable_frame, anchor="nw")
+canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 canvas.configure(yscrollcommand=scrollbar.set)
 
 canvas.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y")
 
-# Scroll with mousewheel
 def _on_mousewheel(event):
     canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
 scrollable_frame.bind_all("<MouseWheel>", _on_mousewheel)
-scrollable_frame.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # Linux
-scrollable_frame.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))   # Linux
+scrollable_frame.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+scrollable_frame.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
 
 paned.add(left_outer, weight=1)
 
-# === Right Frame Layout ===
 right_container = ttk.Frame(paned)
 right_container.pack(fill=tk.BOTH, expand=True)
 
@@ -269,8 +381,9 @@ summary_frame.pack(fill='x')
 
 paned.add(right_container, weight=5)
 
-# === Initialize Buttons from Excel Data ===
 button_labels = spell_maker.df["Effect Name"].dropna().unique().tolist()
-create_main_buttons(scrollable_frame, right_frame, button_labels)
+create_main_buttons(scrollable_frame, right_frame, button_labels, canvas)
+
+update_saved_display(right_frame)
 
 root.mainloop()
