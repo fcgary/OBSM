@@ -1,6 +1,7 @@
 import pandas as pd
 from logging import getLogger
-
+import os
+import sys
 logger = getLogger(__name__)
 
 
@@ -10,8 +11,14 @@ def sslc(data: [str, pd.Series]):
     else:
         return data.str.strip().str.lower()
 
-# The location of the spell effect data sheet
-fp = "C:\\Users\\Frank\\PycharmProjects\\OBSM\\data\\obsm_effs.xlsx"
+if getattr(sys, 'frozen', False):
+    # If frozen by PyInstaller
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+fp = os.path.join(base_path, 'data', 'obsm_effs.xlsx')
+
 # skill level: max magicka cost craftable
 skill_reqs = {0: 26,  # Magicka < 26: no skill level requirement
               25: 63,  # 26 ≤ Magicka < 63: requires skill of 25

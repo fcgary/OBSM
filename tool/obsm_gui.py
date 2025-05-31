@@ -1,6 +1,12 @@
 import tkinter as tk
 from tkinter import ttk
-from obsm_calculator import SpellMaker
+import sys
+import os
+
+# Add the directory containing obsm_calculator.py to the path
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+from tool.obsm_calculator import SpellMaker
 
 spell_maker = SpellMaker(skills={"Alteration": 5, "Conjuration": 5, "Destruction": 5, "Illusion": 5, "Mysticism": 5, "Restoration": 5})
 

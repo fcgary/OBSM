@@ -2,3 +2,4 @@ pip-tools
 pandas
 slash
 openpyxl
+pyinstaller
