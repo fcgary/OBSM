@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk
 from obsm_calculator import SpellMaker
 
-# Initialize SpellMaker
 spell_maker = SpellMaker(skills={"Alteration": 5, "Conjuration": 5, "Destruction": 5, "Illusion": 5, "Mysticism": 5, "Restoration": 5})
 
 def has_details(eff_name):
@@ -40,6 +39,9 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
 
     for label in ["Magnitude", "Duration", "Area"]:
         min_val, max_val = slider_ranges[label]
+
+        lbl = ttk.Label(left_frame, text=label)
+        lbl.pack()
         frame = ttk.Frame(left_frame)
         frame.pack(fill='x', pady=2)
 
@@ -53,21 +55,11 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
         def slider_to_entry(val, var=var):
             val_int = int(float(val))
             var.set(str(val_int))
-
         s.config(command=slider_to_entry)
 
-        def entry_validate(new_val, min_val=min_val, max_val=max_val):
-            if new_val == "":
-                return True
-            try:
-                v = int(new_val)
-                return min_val <= v <= max_val
-            except ValueError:
-                return False
+        debounce_timers = {}
 
-        vcmd = (left_frame.register(entry_validate), '%P')
-
-        def on_entry_focus_out(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+        def debounced_validate(var=var, min_val=min_val, max_val=max_val, scale=s):
             try:
                 v = int(var.get())
                 if v < min_val:
@@ -80,13 +72,20 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
                 var.set(str(min_val))
                 scale.set(min_val)
 
-        entry.bind("<FocusOut>", on_entry_focus_out)
+        def on_entry_change(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+            key = str(entry)
+            if key in debounce_timers:
+                entry.after_cancel(debounce_timers[key])
+            debounce_timers[key] = entry.after(500, lambda: debounced_validate(var, min_val, max_val, scale))
+
+        entry.bind("<KeyRelease>", on_entry_change)
+        entry.bind("<FocusOut>", lambda e: debounced_validate(var, min_val, max_val, scale))  # fallback
 
         var.set(str(min_val))
         s.set(min_val)
 
         slider_data.append((var, s))
-        widgets.extend([frame])
+        widgets.extend([lbl, frame])
 
     has_dropdown = has_details(clicked_text)
     if has_dropdown:
@@ -117,18 +116,21 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
         create_main_buttons(left_frame, right_frame, labels, canvas)
 
     def save():
-        params = {
-            "mag": int(slider_data[0][0].get()),
-            "dur": int(slider_data[1][0].get()),
-            "area": int(slider_data[2][0].get()),
-            "range": range_value.get()
-        }
-        if has_dropdown:
-            params["details"] = dropdown_value.get()
+        try:
+            params = {
+                "mag": int(slider_data[0][0].get()),
+                "dur": int(slider_data[1][0].get()),
+                "area": int(slider_data[2][0].get()),
+                "range": range_value.get()
+            }
+            if has_dropdown:
+                params["details"] = dropdown_value.get()
 
-        spell_maker.update_spell(clicked_text, **params)
-        update_saved_display(right_frame)
-        cancel()
+            spell_maker.update_spell(clicked_text, **params)
+            update_saved_display(right_frame)
+            cancel()
+        except ValueError:
+            pass
 
     save_button = ttk.Button(left_frame, text="Save", command=save)
     save_button.pack(pady=5)
@@ -142,12 +144,21 @@ def update_saved_display(right_frame):
     for widget in skills_frame.winfo_children():
         widget.destroy()
 
+    debounce_timers = {}
+
     def on_skill_change(skill_name, var):
-        try:
-            new_val = int(var.get())
-            spell_maker.skills[skill_name] = new_val
-        except ValueError:
-            pass
+        def delayed_update():
+            try:
+                new_val = int(var.get())
+                spell_maker.skills[skill_name] = new_val
+                spell_maker.casting_cost = spell_maker._calc_cost()
+                update_saved_display(right_frame)
+            except ValueError:
+                pass
+
+        if skill_name in debounce_timers:
+            right_frame.after_cancel(debounce_timers[skill_name])
+        debounce_timers[skill_name] = right_frame.after(500, delayed_update)  # 500 ms delay
 
     if spell_maker.skills:
         skills = list(spell_maker.skills.items())
@@ -164,14 +175,20 @@ def update_saved_display(right_frame):
             var = tk.StringVar(value=str(value))
             entry = ttk.Entry(frame, textvariable=var, width=5)
             entry.pack(side='left')
+
             var.trace_add("write", lambda *_, sk=skill, v=var: on_skill_change(sk, v))
     else:
         ttk.Label(skills_frame, text="No skills set.").pack(anchor='w')
 
     for widget in summary_frame.winfo_children():
         widget.destroy()
+
     if spell_maker.current_spell:
         ttk.Label(summary_frame, text=str(spell_maker.current_spell), justify='left').pack(anchor='w')
+
+        # Add casting cost (modified by skill)
+        cost_label = ttk.Label(summary_frame, text=f"Casting Cost (Skill Modified): {spell_maker.casting_cost:.2f}")
+        cost_label.pack(anchor='w')
     else:
         ttk.Label(summary_frame, text="No spell created.").pack(anchor='w')
 
@@ -217,7 +234,12 @@ def edit_entry(index, right_frame, left_frame):
 
     main_window.update_idletasks()
     center_edit_window()
-    main_window.bind("<Configure>", lambda event: center_edit_window())
+
+    def safe_center(e):
+        if edit_win.winfo_exists():
+            center_edit_window()
+
+    main_window.bind("<Configure>", safe_center)
 
     title_bar = tk.Frame(edit_win, bg="#444")
     title_bar.pack(fill="x")
@@ -239,6 +261,7 @@ def edit_entry(index, right_frame, left_frame):
     for val, label in zip([eff.mag, eff.dur, eff.area], ["Magnitude", "Duration", "Area"]):
         min_val, max_val = slider_ranges[label]
 
+        ttk.Label(content_frame, text=label).pack()
         frame = ttk.Frame(content_frame)
         frame.pack(fill='x', pady=2)
 
@@ -247,26 +270,12 @@ def edit_entry(index, right_frame, left_frame):
         entry.pack(side='left')
 
         s = ttk.Scale(frame, from_=min_val, to=max_val, orient='horizontal')
-
-        def slider_to_entry(val, var=var):
-            val_int = int(float(val))
-            var.set(str(val_int))
-
-        s.config(command=slider_to_entry)
+        s.config(command=lambda val, var=var: var.set(str(int(float(val)))))
         s.pack(side='left', fill='x', expand=True, padx=5)
 
-        def entry_validate(new_val, min_val=min_val, max_val=max_val):
-            if new_val == "":
-                return True
-            try:
-                v = int(new_val)
-                return min_val <= v <= max_val
-            except ValueError:
-                return False
+        debounce_timers = {}
 
-        vcmd = (content_frame.register(entry_validate), '%P')
-
-        def on_entry_focus_out(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+        def debounced_validate(var=var, min_val=min_val, max_val=max_val, scale=s):
             try:
                 v = int(var.get())
                 if v < min_val:
@@ -279,7 +288,14 @@ def edit_entry(index, right_frame, left_frame):
                 var.set(str(min_val))
                 scale.set(min_val)
 
-        entry.bind("<FocusOut>", on_entry_focus_out)
+        def on_entry_change(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+            key = str(entry)
+            if key in debounce_timers:
+                entry.after_cancel(debounce_timers[key])
+            debounce_timers[key] = entry.after(500, lambda: debounced_validate(var, min_val, max_val, scale))
+
+        entry.bind("<KeyRelease>", on_entry_change)
+        entry.bind("<FocusOut>", lambda e: debounced_validate(var, min_val, max_val, scale))  # fallback
 
         s.set(val)
         vars_.append(var)
@@ -294,12 +310,13 @@ def edit_entry(index, right_frame, left_frame):
     if has_details(eff.name):
         ttk.Label(content_frame, text="Details:").pack()
         ddl = ttk.Combobox(content_frame, textvariable=dropdown_var)
-        if "Attribute" in eff.name:
-            ddl['values'] = ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality", "Luck")
-        else:
-            ddl['values'] = ("Armorer", "Athletics", "Blade", "Block", "Blunt", "Hand to Hand", "Heavy Armor",
-                             "Alchemy", "Alteration", "Conjuration", "Destruction", "Illusion", "Mysticism", "Restoration",
-                             "Acrobatics", "Light Armor", "Marksman", "Mercantile", "Security", "Sneak", "Speechcraft")
+        ddl['values'] = (
+            ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality", "Luck")
+            if "Attribute" in eff.name else
+            ("Armorer", "Athletics", "Blade", "Block", "Blunt", "Hand to Hand", "Heavy Armor",
+             "Alchemy", "Alteration", "Conjuration", "Destruction", "Illusion", "Mysticism", "Restoration",
+             "Acrobatics", "Light Armor", "Marksman", "Mercantile", "Security", "Sneak", "Speechcraft")
+        )
         ddl.pack()
 
     def save_changes():
@@ -320,12 +337,14 @@ def edit_entry(index, right_frame, left_frame):
         spell_maker.current_spell._calc_derived_fields()
         spell_maker.casting_cost = spell_maker._calc_cost()
         update_saved_display(right_frame)
+        main_window.unbind("<Configure>")
         edit_win.destroy()
 
     button_frame = ttk.Frame(content_frame)
     button_frame.pack(pady=10)
     ttk.Button(button_frame, text="Save Changes", command=save_changes).pack(side='left', padx=5)
-    ttk.Button(button_frame, text="Cancel", command=edit_win.destroy).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="Cancel", command=lambda: (main_window.unbind("<Configure>"), edit_win.destroy())).pack(side='left', padx=5)
+
 
 def delete_entry(index, right_frame):
     eff = spell_maker.current_spell.effects[index]
@@ -347,11 +366,7 @@ canvas = tk.Canvas(left_outer, borderwidth=0, width=150)
 scrollbar = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
 scrollable_frame = ttk.Frame(canvas)
 
-scrollable_frame.bind(
-    "<Configure>",
-    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-)
-
+scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 canvas.configure(yscrollcommand=scrollbar.set)
 
@@ -383,7 +398,6 @@ paned.add(right_container, weight=5)
 
 button_labels = spell_maker.df["Effect Name"].dropna().unique().tolist()
 create_main_buttons(scrollable_frame, right_frame, button_labels, canvas)
-
 update_saved_display(right_frame)
 
 root.mainloop()
