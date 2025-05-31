@@ -66,23 +66,20 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
         entry = ttk.Entry(frame, width=5, textvariable=var)
         entry.pack(side='left')
 
-        def step(val, step_amt, var=var, scale=None, label=label):
+        def step(delta, label, var, scale):
             try:
                 current = int(var.get())
-                new_val = current + step_amt
+                new_val = current + delta
                 if label == "Area":
                     new_val = round(new_val / 5) * 5
-                if new_val < min_val:
-                    new_val = min_val
-                elif new_val > max_val:
-                    new_val = max_val
-                var.set(str(new_val))
+                new_val = max(slider_ranges[label][0], min(slider_ranges[label][1], new_val))
+                var.set(new_val)
                 if scale:
                     scale.set(new_val)
             except ValueError:
-                var.set(str(min_val))
+                var.set(slider_ranges[label][0])
                 if scale:
-                    scale.set(min_val)
+                    scale.set(slider_ranges[label][0])
 
         minus_btn = ttk.Button(frame, text="-", width=2)
         minus_btn.pack(side='left', padx=(2, 2))
@@ -93,8 +90,8 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
         plus_btn = ttk.Button(frame, text="+", width=2)
         plus_btn.pack(side='left', padx=(2, 0))
 
-        minus_btn.config(command=lambda v=-1, s=s: step(val=var.get(), step_amt=v, var=var, scale=s))
-        plus_btn.config(command=lambda v=1, s=s: step(val=var.get(), step_amt=v, var=var, scale=s))
+        minus_btn.config(command=lambda v=var, sc=s, lbl=label: step(-1, label=lbl, var=v, scale=sc))
+        plus_btn.config(command=lambda v=var, sc=s, lbl=label: step(1, label=lbl, var=v, scale=sc))
 
         def slider_to_entry(val, var=var, label=label):
             val_int = int(float(val))
@@ -393,20 +390,20 @@ def edit_entry(index, right_frame, left_frame):
         entry.pack(side='left')
 
         # Define stepper logic
-        def step(delta, label=label, var=None, scale=None):
+        def step(delta, label, var, scale):
             try:
                 current = int(var.get())
                 new_val = current + delta
                 if label == "Area":
                     new_val = round(new_val / 5) * 5
-                new_val = max(min_val, min(max_val, new_val))
+                new_val = max(slider_ranges[label][0], min(slider_ranges[label][1], new_val))
                 var.set(new_val)
                 if scale:
                     scale.set(new_val)
             except ValueError:
-                var.set(min_val)
+                var.set(slider_ranges[label][0])
                 if scale:
-                    scale.set(min_val)
+                    scale.set(slider_ranges[label][0])
 
         minus_btn = ttk.Button(frame, text="-", width=2)
         minus_btn.pack(side='left', padx=(2, 2))
@@ -424,8 +421,8 @@ def edit_entry(index, right_frame, left_frame):
             debounced_apply_update()
 
         s.config(command=on_slider_change)
-        minus_btn.config(command=lambda v=var, sc=s: step(-1, var=v, scale=sc))
-        plus_btn.config(command=lambda v=var, sc=s: step(1, var=v, scale=sc))
+        minus_btn.config(command=lambda v=var, sc=s, lbl=label: step(-1, label=lbl, var=v, scale=sc))
+        plus_btn.config(command=lambda v=var, sc=s, lbl=label: step(1, label=lbl, var=v, scale=sc))
 
     mag_var = var_dict.get("Magnitude", tk.IntVar(value=0))
     dur_var = var_dict.get("Duration", tk.IntVar(value=1))
