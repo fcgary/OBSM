@@ -11,7 +11,7 @@ def sslc(data: [str, pd.Series]):
         return data.str.strip().str.lower()
 
 # The location of the spell effect data sheet
-fp = "C:\\Users\\Frank\\PycharmProjects\\OBSM\\obsm_effs.xlsx"
+fp = "C:\\Users\\Frank\\PycharmProjects\\OBSM\\data\\obsm_effs.xlsx"
 # skill level: max magicka cost craftable
 skill_reqs = {0: 26,  # Magicka < 26: no skill level requirement
               25: 63,  # 26 ≤ Magicka < 63: requires skill of 25
@@ -317,7 +317,14 @@ class SpellMaker:
         else:
             # Existing Spell
             if isinstance(eff, str):
-                self.current_spell.update_effect_from_str(eff, **kwargs)
+                # Determine whether effect is already present
+                str_detail = kwargs.get("details", def_string)
+                existing_idx = self.current_spell._match_eff(eff, str_detail)
+                if existing_idx is not None:
+                    self.current_spell.update_effect_from_str(eff, **kwargs)
+                else:
+                    effect = self._get_eff(eff, **kwargs)
+                    self.current_spell.add_effect(effect)
             else:
                 self.current_spell.add_effect(eff)
         self.casting_cost = self._calc_cost()
