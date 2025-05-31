@@ -108,7 +108,6 @@ def update_saved_display(right_frame):
     else:
         ttk.Label(summary_frame, text="No spell created.").pack(anchor='w')
 
-
     for widget in right_frame.winfo_children():
         widget.destroy()
 
@@ -123,7 +122,7 @@ def update_saved_display(right_frame):
         label = ttk.Label(frame, text=str(eff))
         label.pack(side='left', expand=True, anchor='w')
 
-        edit_btn = ttk.Button(frame, text="Edit", command=lambda i=idx: edit_entry(i, right_frame, left_frame))
+        edit_btn = ttk.Button(frame, text="Edit", command=lambda i=idx: edit_entry(i, right_frame, scrollable_frame))
         edit_btn.pack(side='right', padx=2)
 
         delete_btn = ttk.Button(frame, text="Delete", command=lambda i=idx: delete_entry(i, right_frame))
@@ -132,10 +131,32 @@ def update_saved_display(right_frame):
 def edit_entry(index, right_frame, left_frame):
     eff = spell_maker.current_spell.effects[index]
 
-    edit_win = tk.Toplevel()
+    main_window = right_frame.winfo_toplevel()
+    edit_win = tk.Toplevel(main_window)
     edit_win.geometry("300x350")
-    edit_win.transient(right_frame.winfo_toplevel())
+    edit_win.transient(main_window)
     edit_win.grab_set()
+
+    def center_edit_window():
+        main_x = main_window.winfo_x()
+        main_y = main_window.winfo_y()
+        main_w = main_window.winfo_width()
+        main_h = main_window.winfo_height()
+        win_w = 300
+        win_h = 350
+        pos_x = main_x + (main_w // 2) - (win_w // 2)
+        pos_y = main_y + (main_h // 2) - (win_h // 2)
+        edit_win.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
+
+    # Initial center
+    main_window.update_idletasks()
+    center_edit_window()
+
+    # Update position when main window moves
+    def track_main_position(event):
+        center_edit_window()
+
+    main_window.bind("<Configure>", track_main_position)
 
     title_bar = tk.Frame(edit_win, bg="#444")
     title_bar.pack(fill="x")
@@ -198,7 +219,7 @@ def delete_entry(index, right_frame):
     spell_maker.current_spell.remove_effect(eff.name, eff.details)
     update_saved_display(right_frame)
 
-# Initialize the GUI
+# === GUI Initialization ===
 root = tk.Tk()
 root.title("Spell Maker")
 root.geometry("800x400")
@@ -206,28 +227,50 @@ root.geometry("800x400")
 paned = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
 paned.pack(fill=tk.BOTH, expand=True)
 
-left_frame = ttk.Frame(paned, width=200, relief=tk.SUNKEN)
-# Create a vertical container for the right pane
+# === Left Frame with Scrollable Canvas ===
+left_outer = ttk.Frame(paned, width=120)
+canvas = tk.Canvas(left_outer, borderwidth=0, width=120)
+scrollbar = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
+scrollable_frame = ttk.Frame(canvas)
+
+scrollable_frame.bind(
+    "<Configure>",
+    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+)
+
+canvas.create_window((20, 0), window=scrollable_frame, anchor="nw")
+canvas.configure(yscrollcommand=scrollbar.set)
+
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
+
+# Scroll with mousewheel
+def _on_mousewheel(event):
+    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+scrollable_frame.bind_all("<MouseWheel>", _on_mousewheel)
+scrollable_frame.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # Linux
+scrollable_frame.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))   # Linux
+
+paned.add(left_outer, weight=1)
+
+# === Right Frame Layout ===
 right_container = ttk.Frame(paned)
 right_container.pack(fill=tk.BOTH, expand=True)
 
-# Upper frame: skills display
 skills_frame = ttk.Frame(right_container, relief=tk.GROOVE, padding=5)
 skills_frame.pack(fill='x')
 
-# Middle frame: saved effects
 right_frame = ttk.Frame(right_container, relief=tk.SUNKEN)
 right_frame.pack(fill='both', expand=True)
 
-# Bottom frame: spell summary
 summary_frame = ttk.Frame(right_container, relief=tk.GROOVE, padding=5)
 summary_frame.pack(fill='x')
 
-paned.add(left_frame, weight=1)
 paned.add(right_container, weight=5)
 
-# Replace with real effect names as needed
-button_labels = ["Restore Health", "Fire Damage", "Fortify Attribute", "Drain Skill"]
-create_main_buttons(left_frame, right_frame, button_labels)
+# === Initialize Buttons from Excel Data ===
+button_labels = spell_maker.df["Effect Name"].dropna().unique().tolist()
+create_main_buttons(scrollable_frame, right_frame, button_labels)
 
 root.mainloop()
