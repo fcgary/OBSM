@@ -7,6 +7,10 @@ spell_maker = SpellMaker(skills={"Alteration": 5, "Conjuration": 5, "Destruction
 def has_details(eff_name):
     return "Skill" in eff_name or "Attribute" in eff_name
 
+def is_bound_or_summon(eff_name):
+    # Check if effect name includes "Bound" or "Summon" exactly or as substring
+    return any(word in eff_name for word in ["Bound", "Summon"])
+
 def create_main_buttons(left_frame, right_frame, labels, canvas):
     buttons = []
     left_frame.main_buttons = buttons
@@ -31,13 +35,20 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
     dropdown_value = tk.StringVar(value="Choose one..")
     range_value = tk.StringVar(value="Self")
 
+    is_bound_or_summon = ("Bound" in clicked_text) or ("Summon" in clicked_text)
+
     slider_ranges = {
         "Magnitude": (3, 100),
         "Duration": (1, 100),
         "Area": (0, 100),
     }
 
-    for label in ["Magnitude", "Duration", "Area"]:
+    # Only show Duration slider plus Magnitude and Area if NOT Bound or Summon
+    sliders_to_show = ["Duration"]
+    if not is_bound_or_summon:
+        sliders_to_show = ["Magnitude", "Duration", "Area"]
+
+    for label in sliders_to_show:
         min_val, max_val = slider_ranges[label]
 
         lbl = ttk.Label(left_frame, text=label)
@@ -52,16 +63,20 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
         s = ttk.Scale(frame, from_=min_val, to=max_val, orient='horizontal')
         s.pack(side='left', fill='x', expand=True, padx=5)
 
-        def slider_to_entry(val, var=var):
+        def slider_to_entry(val, var=var, label=label):
             val_int = int(float(val))
+            if label == "Area":
+                val_int = round(val_int / 5) * 5
             var.set(str(val_int))
         s.config(command=slider_to_entry)
 
         debounce_timers = {}
 
-        def debounced_validate(var=var, min_val=min_val, max_val=max_val, scale=s):
+        def debounced_validate(var=var, min_val=min_val, max_val=max_val, scale=s, label=label):
             try:
                 v = int(var.get())
+                if label == "Area":
+                    v = round(v / 5) * 5
                 if v < min_val:
                     v = min_val
                 elif v > max_val:
@@ -72,14 +87,14 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
                 var.set(str(min_val))
                 scale.set(min_val)
 
-        def on_entry_change(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+        def on_entry_change(event, var=var, min_val=min_val, max_val=max_val, scale=s, label=label):
             key = str(entry)
             if key in debounce_timers:
                 entry.after_cancel(debounce_timers[key])
-            debounce_timers[key] = entry.after(500, lambda: debounced_validate(var, min_val, max_val, scale))
+            debounce_timers[key] = entry.after(500, lambda: debounced_validate(var, min_val, max_val, scale, label))
 
         entry.bind("<KeyRelease>", on_entry_change)
-        entry.bind("<FocusOut>", lambda e: debounced_validate(var, min_val, max_val, scale))  # fallback
+        entry.bind("<FocusOut>", lambda e: debounced_validate(var, min_val, max_val, scale, label))
 
         var.set(str(min_val))
         s.set(min_val)
@@ -104,7 +119,19 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
     range_label = ttk.Label(left_frame, text="Range:")
     range_label.pack()
     range_dropdown = ttk.Combobox(left_frame, textvariable=range_value)
-    range_dropdown['values'] = ("Touch", "Self", "Target")
+
+    if is_bound_or_summon:
+        # Limit to only "Self" and readonly
+        range_dropdown['values'] = ("Self",)
+        range_value.set("Self")
+        range_dropdown.state(["readonly"])
+    elif "Absorb" in clicked_text:
+        range_dropdown['values'] = ("Touch",)
+        range_value.set("Touch")
+        range_dropdown.state(["readonly"])
+    else:
+        range_dropdown['values'] = ("Touch", "Self", "Target")
+
     range_dropdown.pack()
     widgets.extend([range_label, range_dropdown])
 
@@ -117,12 +144,22 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
 
     def save():
         try:
-            params = {
-                "mag": int(slider_data[0][0].get()),
-                "dur": int(slider_data[1][0].get()),
-                "area": int(slider_data[2][0].get()),
-                "range": range_value.get()
-            }
+            # If Bound/Summon, no magnitude or area sliders
+            if is_bound_or_summon:
+                # Magnitude and Area params are ignored or default
+                params = {
+                    "mag": 0,
+                    "dur": int(slider_data[0][0].get()),  # only Duration slider data is present
+                    "area": 0,
+                    "range": range_value.get()
+                }
+            else:
+                params = {
+                    "mag": int(slider_data[0][0].get()),
+                    "dur": int(slider_data[1][0].get()),
+                    "area": int(slider_data[2][0].get()),
+                    "range": range_value.get()
+                }
             if has_dropdown:
                 params["details"] = dropdown_value.get()
 
@@ -257,8 +294,19 @@ def edit_entry(index, right_frame, left_frame):
         "Area": (0, 100),
     }
 
+    bound_or_summon = is_bound_or_summon(eff.name)
+
+    # Only Duration slider for Bound/Summon effects
+    sliders_to_show = ["Duration"] if bound_or_summon else ["Magnitude", "Duration", "Area"]
+
+    label_to_attr = {
+        "Magnitude": "mag",
+        "Duration": "dur",
+        "Area": "area"
+    }
     vars_ = []
-    for val, label in zip([eff.mag, eff.dur, eff.area], ["Magnitude", "Duration", "Area"]):
+    for label in sliders_to_show:
+        val = getattr(eff, label_to_attr[label])
         min_val, max_val = slider_ranges[label]
 
         ttk.Label(content_frame, text=label).pack()
@@ -275,9 +323,11 @@ def edit_entry(index, right_frame, left_frame):
 
         debounce_timers = {}
 
-        def debounced_validate(var=var, min_val=min_val, max_val=max_val, scale=s):
+        def debounced_validate(var=var, min_val=min_val, max_val=max_val, scale=s, label=label):
             try:
                 v = int(var.get())
+                if label == "Area":
+                    v = round(v / 5) * 5
                 if v < min_val:
                     v = min_val
                 elif v > max_val:
@@ -288,14 +338,14 @@ def edit_entry(index, right_frame, left_frame):
                 var.set(str(min_val))
                 scale.set(min_val)
 
-        def on_entry_change(event, var=var, min_val=min_val, max_val=max_val, scale=s):
+        def on_entry_change(event, var=var, min_val=min_val, max_val=max_val, scale=s, label=label):
             key = str(entry)
             if key in debounce_timers:
                 entry.after_cancel(debounce_timers[key])
-            debounce_timers[key] = entry.after(500, lambda: debounced_validate(var, min_val, max_val, scale))
+            debounce_timers[key] = entry.after(500, lambda: debounced_validate(var, min_val, max_val, scale, label))
 
         entry.bind("<KeyRelease>", on_entry_change)
-        entry.bind("<FocusOut>", lambda e: debounced_validate(var, min_val, max_val, scale))  # fallback
+        entry.bind("<FocusOut>", lambda e: debounced_validate(var, min_val, max_val, scale, label))
 
         s.set(val)
         vars_.append(var)
@@ -303,48 +353,71 @@ def edit_entry(index, right_frame, left_frame):
     range_value = tk.StringVar(value=eff.range)
     ttk.Label(content_frame, text="Range:").pack()
     range_dropdown = ttk.Combobox(content_frame, textvariable=range_value)
-    range_dropdown['values'] = ("Touch", "Self", "Target")
+    if bound_or_summon:
+        range_dropdown['values'] = ("Self",)
+        range_value.set("Self")
+        range_dropdown.state(["readonly"])
+    elif "Absorb" in eff.name:
+        range_dropdown['values'] = ("Touch",)
+        range_value.set("Touch")
+        range_dropdown.state(["readonly"])
+    else:
+        range_dropdown['values'] = ("Touch", "Self", "Target")
     range_dropdown.pack()
 
     dropdown_var = tk.StringVar(value=eff.details)
     if has_details(eff.name):
         ttk.Label(content_frame, text="Details:").pack()
         ddl = ttk.Combobox(content_frame, textvariable=dropdown_var)
-        ddl['values'] = (
-            ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality", "Luck")
-            if "Attribute" in eff.name else
-            ("Armorer", "Athletics", "Blade", "Block", "Blunt", "Hand to Hand", "Heavy Armor",
-             "Alchemy", "Alteration", "Conjuration", "Destruction", "Illusion", "Mysticism", "Restoration",
-             "Acrobatics", "Light Armor", "Marksman", "Mercantile", "Security", "Sneak", "Speechcraft")
-        )
+        if "Attribute" in eff.name:
+            ddl['values'] = ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality", "Luck")
+        else:
+            ddl['values'] = ("Armorer", "Athletics", "Blade", "Block", "Blunt", "Hand to Hand", "Heavy Armor",
+                             "Alchemy", "Alteration", "Conjuration", "Destruction", "Illusion", "Mysticism", "Restoration",
+                             "Acrobatics", "Light Armor", "Marksman", "Mercantile", "Security", "Sneak", "Speechcraft")
         ddl.pack()
+    else:
+        ddl = None
 
-    def save_changes():
-        try:
-            mag = int(vars_[0].get())
-            dur = int(vars_[1].get())
-            area = int(vars_[2].get())
-        except ValueError:
-            return
-
-        eff.set_param(
-            mag=mag,
-            dur=dur,
-            area=area,
-            range=range_value.get(),
-            details=dropdown_var.get() if has_details(eff.name) else "None"
-        )
-        spell_maker.current_spell._calc_derived_fields()
-        spell_maker.casting_cost = spell_maker._calc_cost()
-        update_saved_display(right_frame)
-        main_window.unbind("<Configure>")
+    def cancel_edit():
         edit_win.destroy()
 
-    button_frame = ttk.Frame(content_frame)
-    button_frame.pack(pady=10)
-    ttk.Button(button_frame, text="Save Changes", command=save_changes).pack(side='left', padx=5)
-    ttk.Button(button_frame, text="Cancel", command=lambda: (main_window.unbind("<Configure>"), edit_win.destroy())).pack(side='left', padx=5)
+    def save_edit():
+        try:
+            if bound_or_summon:
+                mag = 0
+                dur = int(vars_[0].get())
+                area = 0
+            else:
+                mag = int(vars_[0].get())
+                dur = int(vars_[1].get())
+                area = int(vars_[2].get())
 
+            rng = range_value.get()
+            det = dropdown_var.get() if has_details(eff.name) else ""
+
+            params = {
+                "mag": mag,
+                "dur": dur,
+                "area": area,
+                "range": rng
+            }
+            if det:
+                params["details"] = det
+
+            effect_name = spell_maker.current_spell.effects[index].name
+            spell_maker.update_spell(effect_name, **params)
+
+            update_saved_display(right_frame)
+            edit_win.destroy()
+        except ValueError:
+            pass
+
+    btn_frame = ttk.Frame(edit_win)
+    btn_frame.pack(fill='x', pady=10)
+
+    ttk.Button(btn_frame, text="Save", command=save_edit).pack(side='left', expand=True)
+    ttk.Button(btn_frame, text="Cancel", command=cancel_edit).pack(side='left', expand=True)
 
 def delete_entry(index, right_frame):
     eff = spell_maker.current_spell.effects[index]
