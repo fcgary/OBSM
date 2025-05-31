@@ -132,14 +132,16 @@ class Spell:
     def __str__(self):
         summary = (f"School: {self.dominant_school}\n"
                    f"Required Skill Level: {self.skill_required}\n"
-                   f"Unmodified Cost: {self.total_cost}\n")
+                   f"Unmodified Magicka Cost: {self.total_cost}\n"
+                   f"Gold Cost: {self.gold_cost}\n")
         effects = ("Effects:\n" +
-                   "".join(["\t- " + str(eff) + "\n" for eff in self.effects]))
+                   "".join([" - " + str(eff) + "\n" for eff in self.effects]))
         return summary + effects
 
     def _calc_derived_fields(self):
         self.dominant_school = self._determine_school()
         self.total_cost = self._calc_cost()
+        self.gold_cost = self.total_cost * 3
         self.skill_required = self._determine_skill_req()
 
     def _determine_school(self):
