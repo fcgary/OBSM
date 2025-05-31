@@ -264,22 +264,45 @@ def edit_entry(index, right_frame, left_frame):
     edit_win.transient(main_window)
     edit_win.grab_set()
 
+    update_timer = None
+
+    def debounced_apply_update():
+        nonlocal update_timer
+        if update_timer:
+            edit_win.after_cancel(update_timer)
+        update_timer = edit_win.after(100, apply_live_update)
+
     def center_edit_window():
-        main_x = main_window.winfo_x()
-        main_y = main_window.winfo_y()
-        main_w = main_window.winfo_width()
-        main_h = main_window.winfo_height()
+        right_x = right_frame.winfo_rootx()
+        right_y = right_frame.winfo_rooty()
+        right_w = right_frame.winfo_width()
+        right_h = right_frame.winfo_height()
+
         win_w = 300
         win_h = 350
-        pos_x = main_x + (main_w // 2) - (win_w // 2)
-        pos_y = main_y + (main_h // 2) - (win_h // 2)
+
+        # Position just to the right of the right frame
+        pos_x = right_x + right_w + 5  # 5 px padding
+        pos_y = right_y + (right_h // 2) - (win_h // 2)
+
         edit_win.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
 
     main_window.update_idletasks()
     center_edit_window()
 
-    def safe_center(e):
-        if edit_win.winfo_exists():
+    last_pos = {"x": main_window.winfo_x(), "y": main_window.winfo_y()}
+
+    def safe_center(event):
+        if not edit_win.winfo_exists():
+            return
+
+        new_x = main_window.winfo_x()
+        new_y = main_window.winfo_y()
+
+        # Only re-center if window moved (not resized)
+        if new_x != last_pos["x"] or new_y != last_pos["y"]:
+            last_pos["x"] = new_x
+            last_pos["y"] = new_y
             center_edit_window()
 
     main_window.bind("<Configure>", safe_center)
@@ -336,14 +359,18 @@ def edit_entry(index, right_frame, left_frame):
         frame.pack(fill='x', pady=2)
 
         var = tk.IntVar(value=val)
-        var.trace_add("write", lambda *args: apply_live_update())
+        var.trace_add("write", lambda *args: debounced_apply_update())
         var_dict[label] = var
 
         entry = ttk.Entry(frame, width=5, textvariable=var)
         entry.pack(side='left')
 
+        def on_slider_change(val, var=var):
+            var.set(int(float(val)))
+            debounced_apply_update()
+
         s = ttk.Scale(frame, from_=min_val, to=max_val, orient='horizontal')
-        s.config(command=lambda val, var=var: var.set(int(float(val))))
+        s.config(command=on_slider_change)
         s.set(val)
         s.pack(side='left', fill='x', expand=True, padx=5)
 
@@ -352,7 +379,7 @@ def edit_entry(index, right_frame, left_frame):
     area_var = var_dict.get("Area", tk.IntVar(value=0))
 
     range_value = tk.StringVar(value=eff.range)
-    range_value.trace_add("write", lambda *args: apply_live_update())
+    range_value.trace_add("write", lambda *args: debounced_apply_update())
     ttk.Label(content_frame, text="Range:").pack()
     range_dropdown = ttk.Combobox(content_frame, textvariable=range_value)
     if dur_only:
@@ -369,7 +396,7 @@ def edit_entry(index, right_frame, left_frame):
 
     dropdown_var = tk.StringVar(value=eff.details)
     if has_details(eff.name):
-        dropdown_var.trace_add("write", lambda *args: apply_live_update())
+        dropdown_var.trace_add("write", lambda *args: debounced_apply_update())
         ttk.Label(content_frame, text="Details:").pack()
         ddl = ttk.Combobox(content_frame, textvariable=dropdown_var)
         if "Attribute" in eff.name:
