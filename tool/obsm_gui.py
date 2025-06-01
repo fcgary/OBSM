@@ -17,26 +17,51 @@ def has_dur_only(eff_name):
     # Check if effect name includes "Bound" or "Summon" exactly or as substring
     return any(word in eff_name for word in ["Bound", "Summon", "Night"])
 
-def create_main_buttons(left_frame, right_frame, labels, canvas):
-    buttons = []
-    left_frame.main_buttons = buttons
+def create_main_buttons(scrollable_frame, right_frame, button_dict, canvas):
+    for group, labels in button_dict.items():
+        # Container for the whole group
+        group_container = ttk.Frame(scrollable_frame)
+        group_container.pack(fill="x", pady=5)
 
-    def on_button_click(label_text):
-        for btn in buttons:
-            btn.destroy()
-        canvas.yview_moveto(0)
-        clicked_label = ttk.Label(left_frame, text=f"{label_text}")
-        clicked_label.pack(pady=10)
-        create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, label_text)
+        # Group header
+        header = ttk.Frame(group_container)
+        header.pack(fill="x")
 
-    for label_text in labels:
-        button = ttk.Button(left_frame, text=label_text)
-        button.config(command=lambda t=label_text: on_button_click(t))
-        button.pack(pady=5)
-        buttons.append(button)
+        header_label = ttk.Label(header, text=f"▼ {group}", font=("Segoe UI", 10, "bold"))
+        header_label.pack(side="left", padx=5)
 
-def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, clicked_text):
-    widgets = [clicked_label]
+        # Frame that holds the effect buttons
+        inner_frame = ttk.Frame(group_container)
+        inner_frame.pack(fill="x", padx=10)
+
+        # Toggle collapse/expand
+        def toggle(event, header_label=header_label, inner_frame=inner_frame, group=group):
+            if inner_frame.winfo_manager():
+                inner_frame.pack_forget()
+                header_label.config(text=f"▶ {group}")
+            else:
+                inner_frame.pack(fill="x", padx=10)  # no 'after=header'
+                header_label.config(text=f"▼ {group}")
+
+        header_label.bind("<Button-1>", toggle)
+
+        # Create buttons for each effect
+        for label in labels:
+            button = ttk.Button(inner_frame, text=label, command=lambda l=label: add_effect(scrollable_frame, right_frame, l))
+            button.pack(fill="x", pady=1)
+
+def refresh_buttons():
+    for widget in scrollable_frame.winfo_children():
+        widget.destroy()
+    grouped = sort_effects_grouped(button_labels, sort_mode.get())
+    create_main_buttons(scrollable_frame, right_frame, grouped, canvas)
+
+def add_effect(left_frame, right_frame, clicked_text):
+    # Clear entire left pane content first:
+    for widget in left_frame.winfo_children():
+        widget.destroy()
+    # Continue
+    widgets = []
     slider_data = []
     dropdown_value = tk.StringVar(value="Choose one..")
     range_value = tk.StringVar(value="Self")
@@ -132,46 +157,6 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
         slider_data.append((var, s))
         widgets.extend([lbl, frame])
 
-    has_dropdown = has_details(clicked_text)
-    if has_dropdown:
-        dropdown_label = ttk.Label(left_frame, text="Select an option:")
-        dropdown_label.pack()
-        dropdown = ttk.Combobox(left_frame, textvariable=dropdown_value)
-        if "Attribute" in clicked_text:
-            dropdown['values'] = ("Strength", "Intelligence", "Willpower", "Agility", "Speed", "Endurance", "Personality", "Luck")
-        else:
-            dropdown['values'] = ("Armorer", "Athletics", "Blade", "Block", "Blunt", "Hand to Hand", "Heavy Armor",
-                                   "Alchemy", "Alteration", "Conjuration", "Destruction", "Illusion", "Mysticism", "Restoration",
-                                   "Acrobatics", "Light Armor", "Marksman", "Mercantile", "Security", "Sneak", "Speechcraft")
-        dropdown.pack()
-        widgets.extend([dropdown_label, dropdown])
-
-    range_label = ttk.Label(left_frame, text="Range:")
-    range_label.pack()
-    range_dropdown = ttk.Combobox(left_frame, textvariable=range_value)
-
-    if dur_only:
-        # Limit to only "Self" and readonly
-        range_dropdown['values'] = ("Self",)
-        range_value.set("Self")
-        range_dropdown.state(["readonly"])
-    elif "Absorb" in clicked_text:
-        range_dropdown['values'] = ("Touch",)
-        range_value.set("Touch")
-        range_dropdown.state(["readonly"])
-    else:
-        range_dropdown['values'] = ("Touch", "Self", "Target")
-
-    range_dropdown.pack()
-    widgets.extend([range_label, range_dropdown])
-
-    def cancel():
-        for widget in widgets:
-            widget.destroy()
-        save_button.destroy()
-        cancel_button.destroy()
-        create_main_buttons(left_frame, right_frame, labels, canvas)
-
     def save():
         try:
             # If Bound/Summon, no magnitude or area sliders
@@ -199,13 +184,79 @@ def create_sliders_save_cancel(left_frame, right_frame, labels, clicked_label, c
         except ValueError:
             pass
 
+    # Save button declared here to work with disable logic
     save_button = ttk.Button(left_frame, text="Save", command=save)
+
+    has_dropdown = has_details(clicked_text)
+    if has_dropdown:
+        dropdown_label = ttk.Label(left_frame, text="Select an option:")
+        dropdown_label.pack()
+
+        # Add "Choose one.." to the front of the list
+        if "Attribute" in clicked_text:
+            dropdown_options = ["Choose one..", "Strength", "Intelligence", "Willpower", "Agility", "Speed",
+                                "Endurance", "Personality", "Luck"]
+        else:
+            dropdown_options = ["Choose one..", "Armorer", "Athletics", "Blade", "Block", "Blunt", "Hand to Hand",
+                                "Heavy Armor",
+                                "Alchemy", "Alteration", "Conjuration", "Destruction", "Illusion", "Mysticism",
+                                "Restoration",
+                                "Acrobatics", "Light Armor", "Marksman", "Mercantile", "Security", "Sneak",
+                                "Speechcraft"]
+
+        dropdown = ttk.Combobox(left_frame, textvariable=dropdown_value, values=dropdown_options, state="readonly")
+        dropdown.current(0)  # Set default to "Choose one.."
+        dropdown.pack()
+
+        def on_dropdown_change(event):
+            selected = dropdown.get()
+            if selected != "Choose one..":
+                save_button.config(state="normal")
+            else:
+                save_button.config(state="disabled")
+
+        dropdown.bind("<<ComboboxSelected>>", on_dropdown_change)
+
+        # Disable Save initially since default is "Choose one.."
+        save_button.config(state="disabled")
+
+        widgets.extend([dropdown_label, dropdown])
+
+    range_label = ttk.Label(left_frame, text="Range:")
+    range_label.pack()
+    range_dropdown = ttk.Combobox(left_frame, textvariable=range_value)
+
+    if dur_only:
+        # Limit to only "Self" and readonly
+        range_dropdown['values'] = ("Self",)
+        range_value.set("Self")
+        range_dropdown.state(["readonly"])
+    elif "Absorb" in clicked_text:
+        range_dropdown['values'] = ("Touch",)
+        range_value.set("Touch")
+        range_dropdown.state(["readonly"])
+    else:
+        range_dropdown['values'] = ("Touch", "Self", "Target")
+
+    range_dropdown.pack()
+
+    widgets.extend([range_label, range_dropdown])
+
+    def cancel():
+        for widget in widgets:
+            widget.destroy()
+        save_button.destroy()
+        cancel_button.destroy()
+        refresh_buttons()
+
+    # Save packed here after options
     save_button.pack(pady=5)
 
     cancel_button = ttk.Button(left_frame, text="Cancel", command=cancel)
     cancel_button.pack(pady=5)
 
     left_frame.main_buttons = [save_button, cancel_button]
+    canvas.yview_moveto(0)
 
 def update_saved_display(right_frame):
     for widget in skills_frame.winfo_children():
@@ -465,10 +516,36 @@ def delete_entry(index, right_frame):
 # === GUI Initialization ===
 root = tk.Tk()
 root.title("Spell Maker")
-root.geometry("800x400")
+root.geometry("800x500")
+style = ttk.Style()
+style.configure("Header.TButton", font=("Segoe UI", 10, "bold"))
 
 paned = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
 paned.pack(fill=tk.BOTH, expand=True)
+
+sort_mode = tk.StringVar(value="Alphabetical")
+
+def sort_effects_grouped(labels, mode):
+    if mode == "Alphabetical":
+        grouped = {"A–Z": sorted(labels)}
+    elif mode == "By School":
+        grouped = {}
+        for label in labels:
+            school = spell_maker.get_effect_school(label) or "Unknown"
+            grouped.setdefault(school, []).append(label)
+        for k in grouped:
+            grouped[k].sort()
+    elif mode == "By Function":
+        grouped = {}
+        for label in labels:
+            function = spell_maker.get_effect_function(label) or "Unknown"
+            grouped.setdefault(function, []).append(label)
+        for k in grouped:
+            grouped[k].sort()
+    else:
+        grouped = {"All": labels}
+    return dict(sorted(grouped.items()))  # Sort groups alphabetically or numerically
+
 
 left_outer = ttk.Frame(paned, width=170)
 left_outer.pack_propagate(False)
@@ -480,6 +557,19 @@ scrollable_frame = ttk.Frame(canvas)
 scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 canvas.configure(yscrollcommand=scrollbar.set)
+
+sort_frame = ttk.Frame(left_outer)
+sort_frame.pack(fill='x', pady=5)
+
+ttk.Label(sort_frame, text="Sort by:").pack(side='left', padx=(5, 2))
+
+sort_dropdown = ttk.OptionMenu(
+    sort_frame, sort_mode, sort_mode.get(),
+    "Alphabetical", "By School", "By Function",
+    command=lambda _: refresh_buttons()
+)
+sort_dropdown.pack(side='left', padx=2)
+
 
 canvas.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y")
@@ -508,7 +598,8 @@ summary_frame.pack(fill='x')
 paned.add(right_container, weight=5)
 
 button_labels = spell_maker.df["Effect Name"].dropna().unique().tolist()
-create_main_buttons(scrollable_frame, right_frame, button_labels, canvas)
+sorted_labels = sort_effects_grouped(button_labels, sort_mode.get())
+create_main_buttons(scrollable_frame, right_frame, sorted_labels, canvas)
 update_saved_display(right_frame)
 
 root.mainloop()

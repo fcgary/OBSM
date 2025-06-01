@@ -34,7 +34,7 @@ def has_details(eff_name):
 
 def has_mag(eff_name):
     no_mag_keys = ["Water", "Bound", "Summon", "Paralyze", "Silence", "Invisibility",
-                   "Soul Trap", "Cure"]
+                   "Soul Trap", "Cure", "Night-Eye"]
     return False if True in [key in eff_name for key in no_mag_keys] else True
 
 
@@ -56,6 +56,7 @@ class Effect:
         self.name = data.get("Effect Name", def_string)
         self.school = data.get("School", def_string)
         self.base = data.get("Base Cost", def_int)
+        self.function = data.get("Function", def_string)
         # Instance data
         self.details = kwargs.get("details", def_string)
         self.mag = kwargs.get("mag", def_int) if has_mag(self.name) else no_mag_default
@@ -65,6 +66,7 @@ class Effect:
         # Derived values
         self.is_target = True if self.range == "Target" else False
         self.eff_cost = self._calc_eff_cost()
+
 
     def __str__(self):
         summary = ''
@@ -314,6 +316,20 @@ class SpellMaker:
         eff_data = self.df[sslc(self.df["Effect Name"]) == sslc(name)].squeeze()
         effect = Effect(data=eff_data, **kwargs)
         return effect
+
+    def get_effect_school(self, name):
+        """
+        Get the school of a named effect
+        """
+        eff_data = self.df[sslc(self.df["Effect Name"]) == sslc(name)].squeeze()
+        return eff_data.get("School", def_string)
+
+    def get_effect_function(self, name):
+        """
+        Get the function of a named effect
+        """
+        eff_data = self.df[sslc(self.df["Effect Name"]) == sslc(name)].squeeze()
+        return eff_data.get("Function", def_string)
 
     def update_spell(self, eff: [str, Effect], **kwargs):
         if not self.current_spell:
